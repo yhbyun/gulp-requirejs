@@ -33,7 +33,8 @@ module.exports = function(opts) {
     
     // try {
         optimize(opts, function(text) {
-            _s.write(new File({
+            _s.resume();
+            _s.end(new File({
                 path: _fName,
                 contents: new Buffer(text)
             }));
