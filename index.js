@@ -1,57 +1,97 @@
-var gutil       = require('gulp-util'),
-    requirejs   = require('requirejs'),
-    PluginError = gutil.PluginError,
-    File        = gutil.File,
-    es          = require('event-stream')
+var gutil       = require('gulp-util');
+var requirejs   = require('requirejs');
+var PluginError = gutil.PluginError;
+var File        = gutil.File;
+var es          = require('event-stream');
+var tmp         = require('tmp');
+var fs          = require('vinyl-fs');
+var path        = require('path');
 
 // Consts
 const PLUGIN_NAME = 'gulp-requirejs';
 
 
-module.exports = function(opts) {
+module.exports = function(options) {
 
     'use strict';
 
-    if (!opts) {
+    if (!options) {
         throw new PluginError(PLUGIN_NAME, 'Missing options array!');
     }
 
-    if (!opts.out && typeof opts.out !== 'string') {
-        throw new PluginError(PLUGIN_NAME, 'Only single file outputs are supported right now, please pass a valid output file name!');
-    }
-
-    if (!opts.baseUrl) {
-        throw new PluginError(PLUGIN_NAME, 'Pipeing dirs/files is not supported right now, please specify the base path for your script.');
-    }
-
-    // create the stream and save the file name (opts.out will be replaced by a callback function later)
-    var _s     = es.pause(),
-        _fName = opts.out;
-
-    // just a small wrapper around the r.js optimizer, we write a new gutil.File (vinyl) to the Stream, mocking a file, which can be handled
-    // regular gulp plugins (i hope...).
-    
-    // try {
-        optimize(opts, function(text) {
-            _s.resume();
-            _s.end(new File({
-                path: _fName,
-                contents: new Buffer(text)
-            }));
-        });
-    // } catch (err) {
-    //     _s.emit('error', err);
-    // }
-
-    
-
-    // return the stream for chain .pipe()ing
-    return _s;
+    // if optimize only one module, then the option `out` should be set
+    // if `out` not set, then we take that as multi-modules optimize
+    return options.out ? singleOptimize(options) : multiOptimize(options);
 }
 
-// a small wrapper around the r.js optimizer
-function optimize(opts, cb) {
-    opts.out = cb;
-    opts.optimize = 'none';
-    requirejs.optimize(opts);
+/**
+ * Single Module Optimize
+ * 
+ * @param {Object} options r.js options
+ * @return {Stream}
+ */
+function singleOptimize(options) {
+
+    var stream = es.pause();
+
+    options.optimize = 'none';
+
+    // very amazing, `out` can be set with a `function` as callback
+    options.out = function (text) {
+        stream.resume();
+        stream.end(new File({
+            path: _fName,
+            contents: new Buffer(text)
+        }));
+    };
+
+    requirejs.optimize(options);
+
+    return stream;
 }
+
+/**
+ * multi module optimize
+ * 
+ * 1:  We will return a paused stream;
+ * 2:  Then we will run the r.js but ignore the `dir` in options. 
+ *     Instead, we generate a tmp dir and replace the `dir` option 
+ *     to save the r.js optimization files;
+ * 3:  Finally, we resume the stream and pipe these files (exclude
+ *     build.txt) from tmp dir to the stream;
+ * 
+ * @param {Object} options 
+ * @return {EventStream}
+ */
+function multiOptimize(options) {
+
+    var dir = options.dir;
+    var stream = es.pause();
+
+    tmp.dir({ 
+        mode: 0777, 
+        prefix: 'gulp-requirejs-tmp-' 
+    }, function (err, tmpdir) {
+
+      if (err) {
+        throw err;
+      }
+
+      options.dir = tmpdir;
+
+      requirejs.optimize(options, function (result) {
+        stream.resume();
+        fs.src([
+          path.join(tmpdir, "/*.js"),
+          path.join(tmpdir, "/*.css")
+        ]).pipe(stream);
+      }, function (err) {
+        throw err;
+      });
+
+    });
+
+    return stream;
+
+}
+
