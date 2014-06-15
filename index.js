@@ -26,7 +26,7 @@ module.exports = function(options) {
 
 /**
  * Single Module Optimize
- * 
+ *
  * @param {Object} options r.js options
  * @return {Stream}
  */
@@ -52,15 +52,15 @@ function singleOptimize(options) {
 
 /**
  * multi module optimize
- * 
+ *
  * 1:  We will return a paused stream;
- * 2:  Then we will run the r.js but ignore the `dir` in options. 
- *     Instead, we generate a tmp dir and replace the `dir` option 
+ * 2:  Then we will run the r.js but ignore the `dir` in options.
+ *     Instead, we generate a tmp dir and replace the `dir` option
  *     to save the r.js optimization files;
  * 3:  Finally, we resume the stream and pipe these files (exclude
  *     build.txt) from tmp dir to the stream;
- * 
- * @param {Object} options 
+ *
+ * @param {Object} options
  * @return {EventStream}
  */
 function multiOptimize(options) {
@@ -68,27 +68,31 @@ function multiOptimize(options) {
     var dir = options.dir;
     var stream = es.pause();
 
-    tmp.dir({ 
-        mode: 0777, 
-        prefix: 'gulp-requirejs-tmp-' 
-    }, function (err, tmpdir) {
+    if (!!! options.dir) {
+        tmp.dir({
+            mode: 0777,
+            prefix: 'gulp-requirejs-tmp-'
+        }, function (err, tmpdir) {
 
-      if (err) {
-        throw err;
-      }
+          if (err) {
+            throw err;
+          }
 
-      options.dir = tmpdir;
+          options.dir = tmpdir;
+        });
+    } else {
+        tmpdir = options.dir;
+    }
 
-      requirejs.optimize(options, function (result) {
+    requirejs.optimize(options, function (result) {
         stream.resume();
         fs.src([
-          path.join(tmpdir, "/*.js"),
-          path.join(tmpdir, "/*.css")
+            path.join(tmpdir, "/*.js"),
+            path.join(tmpdir, "/*.css")
         ]).pipe(stream);
-      }, function (err) {
+    }, function (err) {
+        console.dir(err);
         throw err;
-      });
-
     });
 
     return stream;
